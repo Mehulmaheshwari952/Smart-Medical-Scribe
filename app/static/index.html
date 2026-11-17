@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Medical Scribe — Clinician Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+  <!-- Header -->
+  <header class="bg-slate-900 text-white px-6 py-4 shadow flex flex-wrap items-center justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-bold tracking-tight">Smart Medical Scribe &amp; Patient Dashboard</h1>
+      <p class="text-xs text-slate-400">Human-in-the-Loop Clinical Documentation &amp; EHR-RAG</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <select id="patientSelect" class="bg-slate-800 border border-slate-700 text-sm rounded px-3 py-2 text-white">
+        <option value="">Loading patients...</option>
+      </select>
+      <button id="startConsultBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded">
+        + New Consultation
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- Left Column: Patient History & Audio Capture (4 cols) -->
+    <section class="lg:col-span-4 space-y-6">
+      <!-- Patient Context Card -->
+      <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">Patient EHR Context</h2>
+        <div id="patientFacts" class="space-y-2 text-sm text-slate-700">
+          <p class="text-slate-400 italic">Select a patient to view allergies, meds &amp; history.</p>
+        </div>
+        <hr class="my-3 border-slate-100" />
+        <h3 class="text-xs font-semibold uppercase text-slate-400 mb-2">Past Records</h3>
+        <div id="patientRecords" class="space-y-2 max-h-56 overflow-y-auto text-xs"></div>
+      </div>
+
+      <!-- Audio Capture & Transcript Card -->
+      <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500">1. Consultation Audio</h2>
+          <span id="consultStatusBadge" class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+            No Active Session
+          </span>
+        </div>
+
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button id="recordMicBtn" disabled class="bg-rose-600 disabled:opacity-40 hover:bg-rose-500 text-white text-xs font-medium px-3 py-2 rounded">
+            Start Mic (30s chunks)
+          </button>
+          <label class="bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-medium px-3 py-2 rounded cursor-pointer">
+            Upload Audio Chunk
+            <input id="audioFileInput" type="file" accept=".wav,.mp3,.m4a,.ogg,.webm,.flac" class="hidden" disabled />
+          </label>
+        </div>
+
+        <label class="block text-xs font-medium text-slate-500 mb-1">Live Concatenated Transcript</label>
+        <textarea id="transcriptBox" rows="6" readonly
+          class="w-full text-xs bg-slate-50 border border-slate-200 rounded p-2.5 text-slate-800"
+          placeholder="Transcript chunks will appear here..."></textarea>
+
+        <div class="mt-3 flex items-center justify-between gap-2">
+          <label class="flex items-center gap-1.5 text-xs text-slate-600">
+            <input id="includeSummaryCheck" type="checkbox" checked class="rounded" />
+            Generate patient summary
+          </label>
+          <button id="finalizeBtn" disabled class="bg-indigo-600 disabled:opacity-40 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded">
+            2. Finalize &amp; Run RAG
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Middle Column: Editable SOAP Note (5 cols) -->
+    <section class="lg:col-span-5 bg-white rounded-lg shadow-sm border border-slate-200 p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500">3. Structured SOAP Draft</h2>
+        <div class="flex gap-2">
+          <button id="saveEditsBtn" disabled class="bg-slate-800 disabled:opacity-40 hover:bg-slate-700 text-white text-xs font-medium px-3 py-1.5 rounded">
+            Save Edits
+          </button>
+          <button id="approveBtn" disabled class="bg-emerald-600 disabled:opacity-40 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded">
+            Approve &amp; Index
+          </button>
+        </div>
+      </div>
+
+      <div class="space-y-3 text-sm">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600">Chief Complaint</label>
+          <input id="soapCC" type="text" class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600">Symptoms (comma-separated)</label>
+          <input id="soapSymptoms" type="text" class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600">History of Present Illness (HPI)</label>
+          <textarea id="soapHPI" rows="2" class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-sm"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600">Vitals</label>
+            <input id="soapVitals" type="text" class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600">Diagnoses (comma-separated)</label>
+            <input id="soapDiagnoses" type="text" class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600">Exam Findings (comma-separated)</label>
+          <input id="soapExam" type="text" class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600">Treatment Plan (comma-separated)</label>
+          <textarea id="soapTreatment" rows="2" class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-sm"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600">Medications (JSON array)</label>
+          <textarea id="soapMeds" rows="2" class="w-full font-mono text-xs border border-slate-200 rounded px-2.5 py-1.5"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600">Follow-up</label>
+          <input id="soapFollowUp" type="text" class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-sm" />
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: RAG Suggestions, Flags & Patient Summary (3 cols) -->
+    <section class="lg:col-span-3 space-y-6">
+      <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Clinical Safety Flags</h2>
+        <div id="flagsContainer" class="space-y-1.5 text-xs">
+          <p class="text-slate-400 italic">No safety flags.</p>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">EHR-RAG Suggestions</h2>
+        <div id="suggestionsContainer" class="space-y-3 text-xs">
+          <p class="text-slate-400 italic">Finalize consultation to view citation-backed suggestions.</p>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Patient-Friendly Summary</h2>
+        <textarea id="patientSummaryBox" rows="6" class="w-full text-xs border border-slate-200 rounded p-2 text-slate-700"
+          placeholder="Plain-language summary appears after finalization..."></textarea>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="fixed bottom-4 right-4 hidden bg-slate-900 text-white text-xs px-4 py-2.5 rounded shadow-lg"></div>
+
+  <script>
+    let currentConsultation = null;
+    let mediaRecorder = null;
+    let micInterval = null;
+
+    const el = (id) => document.getElementById(id);
+
+    function showToast(msg) {
+      const t = el("toast");
+      t.textContent = msg;
+      t.classList.remove("hidden");
+      setTimeout(() => t.classList.add("hidden"), 3500);
+    }
+
+    function splitCSV(val) {
+      return val.split(",").map(s => s.trim()).filter(Boolean);
+    }
+
+    async function loadPatients() {
+      const res = await fetch("/patients");
+      const patients = await res.json();
+      const sel = el("patientSelect");
+      sel.innerHTML = "";
+      if (!patients.length) {
+        sel.innerHTML = `<option value="">No patients (run python -m app.seed_demo)</option>`;
+        return;
+      }
+      patients.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = p.name;
+        sel.appendChild(opt);
+      });
+      await loadPatientHistory(patients[0].id);
+    }
+
+    async function loadPatientHistory(patientId) {
+      if (!patientId) return;
+      const res = await fetch(`/patients/${patientId}/history`);
+      const data = await res.json();
+
+      const factsDiv = el("patientFacts");
+      if (!data.structured_facts.length) {
+        factsDiv.innerHTML = `<p class="text-slate-400 italic">No structured facts.</p>`;
+      } else {
+        factsDiv.innerHTML = data.structured_facts.map(f => {
+          const badgeColor = f.fact_type === "allergy" ? "bg-rose-100 text-rose-800" : "bg-sky-100 text-sky-800";
+          return `<div class="flex items-center justify-between bg-slate-50 px-2 py-1 rounded border border-slate-100">
+            <span><strong class="uppercase text-[10px] px-1.5 py-0.5 rounded ${badgeColor}">${f.fact_type}</strong> ${f.name}</span>
+            <span class="text-xs text-slate-500">${f.value} ${f.unit}</span>
+          </div>`;
+        }).join("");
+      }
+
+      const recDiv = el("patientRecords");
+      recDiv.innerHTML = data.ehr_records.map(r => `
+        <div class="p-2 rounded bg-slate-50 border border-slate-100">
+          <div class="flex justify-between text-[10px] text-slate-400 mb-0.5">
+            <span class="uppercase font-semibold">${r.record_type}</span>
+            <span>${new Date(r.recorded_at).toLocaleDateString()}</span>
+          </div>
+          <p class="text-slate-700 whitespace-pre-line">${r.content}</p>
+        </div>
+      `).join("") || `<p class="text-slate-400 italic">No EHR records.</p>`;
+    }
+
+    function renderConsultation(c) {
+      currentConsultation = c;
+      const badge = el("consultStatusBadge");
+      badge.textContent = c.status.toUpperCase();
+      badge.className = "text-xs font-semibold px-2 py-0.5 rounded " + (
+        c.status === "approved" ? "bg-emerald-100 text-emerald-800" :
+        c.status === "draft" ? "bg-amber-100 text-amber-800" : "bg-sky-100 text-sky-800"
+      );
+
+      el("transcriptBox").value = c.transcript || "";
+      const locked = c.status === "approved";
+      el("recordMicBtn").disabled = locked;
+      el("audioFileInput").disabled = locked;
+      el("finalizeBtn").disabled = locked;
+      el("saveEditsBtn").disabled = locked || !c.soap_json;
+      el("approveBtn").disabled = locked || !c.soap_json;
+
+      if (c.soap_json) {
+        const s = c.soap_json;
+        el("soapCC").value = s.subjective?.chief_complaint || "";
+        el("soapSymptoms").value = (s.subjective?.symptoms || []).join(", ");
+        el("soapHPI").value = s.subjective?.hpi || "";
+        el("soapVitals").value = s.objective?.vitals || "";
+        el("soapDiagnoses").value = (s.assessment?.diagnoses || []).join(", ");
+        el("soapExam").value = (s.objective?.exam_findings || []).join(", ");
+        el("soapTreatment").value = (s.plan?.treatment || []).join(", ");
+        el("soapMeds").value = JSON.stringify(s.plan?.medications || [], null, 2);
+        el("soapFollowUp").value = s.plan?.follow_up || "";
+      }
+
+      const flagsDiv = el("flagsContainer");
+      flagsDiv.innerHTML = (c.flags && c.flags.length)
+        ? c.flags.map(f => `<div class="p-2 rounded bg-rose-50 border border-rose-200 text-rose-800 font-medium">${f}</div>`).join("")
+        : `<p class="text-slate-400 italic">No safety flags.</p>`;
+
+      const sugDiv = el("suggestionsContainer");
+      sugDiv.innerHTML = (c.suggestions && c.suggestions.length)
+        ? c.suggestions.map(s => `
+            <div class="p-2.5 rounded bg-indigo-50/60 border border-indigo-100 space-y-1">
+              <p class="font-semibold text-slate-800">${s.text}</p>
+              <p class="text-slate-600">${s.rationale}</p>
+              <div class="flex flex-wrap gap-1 pt-1">
+                ${s.source_ids.map(id => `<span class="font-mono text-[10px] bg-white border border-indigo-200 text-indigo-700 px-1.5 py-0.5 rounded">${id}</span>`).join("")}
+              </div>
+            </div>
+          `).join("")
+        : `<p class="text-slate-400 italic">No suggestions yet.</p>`;
+
+      el("patientSummaryBox").value = c.patient_summary || "";
+    }
+
+    async function uploadChunkBlob(blob, filename) {
+      if (!currentConsultation) return;
+      const fd = new FormData();
+      fd.append("file", blob, filename);
+      showToast("Transcribing audio chunk...");
+      const res = await fetch(`/consultations/${currentConsultation.id}/audio`, { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        showToast("STT Error: " + err.detail);
+        return;
+      }
+      const data = await res.json();
+      el("transcriptBox").value = data.full_transcript;
+      showToast("Chunk transcribed.");
+    }
+
+    el("patientSelect").addEventListener("change", (e) => loadPatientHistory(e.target.value));
+
+    el("startConsultBtn").addEventListener("click", async () => {
+      const pid = el("patientSelect").value;
+      if (!pid) return showToast("Select a patient first.");
+      const res = await fetch("/consultations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patient_id: pid }),
+      });
+      const c = await res.json();
+      renderConsultation(c);
+      showToast("Consultation started.");
+    });
+
+    el("audioFileInput").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (file) await uploadChunkBlob(file, file.name);
+      e.target.value = "";
+    });
+
+    el("recordMicBtn").addEventListener("click", async () => {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+        clearInterval(micInterval);
+        el("recordMicBtn").textContent = "Start Mic (30s chunks)";
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      mediaRecorder.ondataavailable = async (ev) => {
+        if (ev.data && ev.data.size > 0) {
+          await uploadChunkBlob(ev.data, `mic_${Date.now()}.webm`);
+        }
+      };
+      mediaRecorder.start();
+      el("recordMicBtn").textContent = "Stop Recording";
+      micInterval = setInterval(() => {
+        if (mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+          mediaRecorder.start();
+        }
+      }, 30000);
+    });
+
+    el("finalizeBtn").addEventListener("click", async () => {
+      if (!currentConsultation) return;
+      const incSummary = el("includeSummaryCheck").checked;
+      showToast("Generating SOAP note & querying EHR-RAG...");
+      const res = await fetch(`/consultations/${currentConsultation.id}/finalize?include_patient_summary=${incSummary}`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        return showToast("Finalize failed: " + err.detail);
+      }
+      renderConsultation(await res.json());
+      showToast("SOAP draft & RAG suggestions ready.");
+    });
+
+    el("saveEditsBtn").addEventListener("click", async () => {
+      if (!currentConsultation || !currentConsultation.soap_json) return;
+      let meds;
+      try {
+        meds = JSON.parse(el("soapMeds").value || "[]");
+      } catch {
+        return showToast("Invalid JSON in Medications box.");
+      }
+      const updatedSoap = {
+        ...currentConsultation.soap_json,
+        subjective: {
+          ...currentConsultation.soap_json.subjective,
+          chief_complaint: el("soapCC").value,
+          symptoms: splitCSV(el("soapSymptoms").value),
+          hpi: el("soapHPI").value,
+        },
+        objective: {
+          ...currentConsultation.soap_json.objective,
+          vitals: el("soapVitals").value,
+          exam_findings: splitCSV(el("soapExam").value),
+        },
+        assessment: {
+          ...currentConsultation.soap_json.assessment,
+          diagnoses: splitCSV(el("soapDiagnoses").value),
+        },
+        plan: {
+          ...currentConsultation.soap_json.plan,
+          treatment: splitCSV(el("soapTreatment").value),
+          medications: meds,
+          follow_up: el("soapFollowUp").value,
+        },
+      };
+      const res = await fetch(`/consultations/${currentConsultation.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          soap_json: updatedSoap,
+          patient_summary: el("patientSummaryBox").value,
+        }),
+      });
+      renderConsultation(await res.json());
+      showToast("Clinician edits saved.");
+    });
+
+    el("approveBtn").addEventListener("click", async () => {
+      if (!currentConsultation) return;
+      const res = await fetch(`/consultations/${currentConsultation.id}/approve`, { method: "POST" });
+      if (!res.ok) return showToast("Approval failed.");
+      const c = await res.json();
+      renderConsultation(c);
+      await loadPatientHistory(c.patient_id);
+      showToast("Consultation APPROVED & indexed into patient EHR!");
+    });
+
+    loadPatients();
+  </script>
+</body>
+</html>

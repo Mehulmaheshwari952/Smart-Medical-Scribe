@@ -157,13 +157,28 @@ def _strip_code_fences(raw_text: str) -> str:
     return cleaned.strip()
 
 
+LIST_FIELDS = {
+    "symptoms",
+    "exam_findings",
+    "lab_results",
+    "diagnoses",
+    "conditions",
+    "treatment",
+    "medications",
+    "tests_ordered",
+}
+
+
 def _sanitize_nulls(data: Any) -> Any:
-    """Replaces accidental JSON null scalars with 'unknown' so Pydantic validation stays strict."""
+    """Replaces accidental JSON null values with 'unknown' (scalars) or [] (list fields)."""
     if isinstance(data, dict):
-        return {
-            k: ("unknown" if v is None and not k.endswith("s") else _sanitize_nulls(v))
-            for k, v in data.items()
-        }
+        cleaned = {}
+        for k, v in data.items():
+            if v is None:
+                cleaned[k] = [] if k in LIST_FIELDS else "unknown"
+            else:
+                cleaned[k] = _sanitize_nulls(v)
+        return cleaned
     if isinstance(data, list):
         return [_sanitize_nulls(item) for item in data if item is not None]
     return data

@@ -17,6 +17,7 @@ from pathlib import Path
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from app.services.similar_cases import SimilarCaseInput, SimilarCaseResult, SimilarCasesService 
+from app.eval.custom_reranker import SemanticAdaptiveReranker
 
 STATIC_DIR = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,13 +34,20 @@ class ServiceContainer:
 
 def create_default_services() -> ServiceContainer:
     ingestion = EHRIngestionService()
+    adaptive_reranker = SemanticAdaptiveReranker(embed_fn=ingestion.embed_fn)
     return ServiceContainer(
         stt=GroqSTTService(),
         structuring=SOAPStructuringService(),
         ingestion=ingestion,
-        retrieval=HybridRetrievalService(ingestion_service=ingestion),
+        retrieval=HybridRetrievalService(
+            ingestion_service=ingestion,
+            reranker_fn=adaptive_reranker,
+        ),
         generation=ClinicalGenerationService(),
-        similar_cases=SimilarCasesService(chroma_client=ingestion.chroma_client),
+        similar_cases=SimilarCasesService(
+            chroma_client=ingestion.chroma_client,
+            embed_fn=ingestion.embed_fn,
+        ),
     )
 
 

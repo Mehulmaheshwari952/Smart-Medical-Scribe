@@ -3,6 +3,7 @@ from typing import Callable, Optional
 from app.config import settings
 from app.schemas import RetrievedChunk
 from app.services.ingestion import EHRIngestionService, TextChunk, tokenize_clinical_text
+from app.eval.custom_reranker import SemanticAdaptiveReranker
 
 RerankerFn = Callable[[list[RetrievedChunk], str, Optional[datetime]], list[RetrievedChunk]]
 

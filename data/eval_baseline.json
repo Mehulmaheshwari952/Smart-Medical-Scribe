@@ -1,0 +1,50 @@
+{
+  "retrieval": {
+    "baseline": {
+      "recall@1": 0.4861,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "latency_ms": {
+        "vector_ms": 8.639,
+        "bm25_ms": 0.568,
+        "fusion_ms": 0.044,
+        "rerank_ms": 0.013,
+        "total_ms": 9.266
+      }
+    },
+    "custom": {
+      "recall@1": 0.4861,
+      "recall@3": 1.0,
+      "recall@5": 1.0,
+      "mrr": 1.0,
+      "latency_ms": {
+        "vector_ms": 7.458,
+        "bm25_ms": 0.541,
+        "fusion_ms": 0.034,
+        "rerank_ms": 0.012,
+        "total_ms": 8.046
+      }
+    }
+  },
+  "structuring": {
+    "mean_latency_ms": 8547.75,
+    "fields": {
+      "symptoms": {
+        "precision": 0.7633,
+        "recall": 0.9083,
+        "f1": 0.8075
+      },
+      "diagnoses": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "medications": {
+        "precision": 1.0,
+        "recall": 0.975,
+        "f1": 0.9833
+      }
+    }
+  }
+}

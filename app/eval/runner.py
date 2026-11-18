@@ -6,7 +6,6 @@ from typing import Callable
 import chromadb
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.eval.custom_reranker import custom_rerank
 from app.eval.synthetic_data import (
     REF_NOW,
     RETRIEVAL_BENCHMARK_PATIENTS,
@@ -16,7 +15,9 @@ from app.models import Base, Patient
 from app.services.ingestion import EHRIngestionService, EmbeddingProvider
 from app.services.retrieval import HybridRetrievalService, RerankerFn, baseline_time_aware_rerank, compute_rrf
 from app.services.structuring import SOAPStructuringService
-
+import json
+from pathlib import Path
+from app.eval.custom_reranker import SemanticAdaptiveReranker
 
 def _normalize_item(text: str) -> str:
     return " ".join(text.lower().strip().split())
@@ -90,6 +91,8 @@ def evaluate_retrieval_reranker(
     recalls_at_1: list[float] = []
     recalls_at_3: list[float] = []
     recalls_at_5: list[float] = []
+    precisions_at_3: list[float] = []
+    precisions_at_5: list[float] = []
     mrr_scores: list[float] = []
 
     stage_latencies: dict[str, list[float]] = {
@@ -140,6 +143,10 @@ def evaluate_retrieval_reranker(
         recalls_at_1.append(len(set(ranked_record_ids[:1]) & gold_records) / len(gold_records))
         recalls_at_3.append(len(set(ranked_record_ids[:3]) & gold_records) / len(gold_records))
         recalls_at_5.append(len(set(ranked_record_ids[:5]) & gold_records) / len(gold_records))
+        top3_ids = ranked_record_ids[:3]
+        top5_ids = ranked_record_ids[:5]
+        precisions_at_3.append(len(set(top3_ids) & gold_records) / max(1, len(top3_ids)))
+        precisions_at_5.append(len(set(top5_ids) & gold_records) / max(1, len(top5_ids)))
 
         rr = 0.0
         for rank_idx, rec_id in enumerate(ranked_record_ids, start=1):
@@ -152,6 +159,8 @@ def evaluate_retrieval_reranker(
         "recall@1": round(statistics.mean(recalls_at_1), 4),
         "recall@3": round(statistics.mean(recalls_at_3), 4),
         "recall@5": round(statistics.mean(recalls_at_5), 4),
+        "precision@3": round(statistics.mean(precisions_at_3), 4),
+        "precision@5": round(statistics.mean(precisions_at_5), 4),
         "mrr": round(statistics.mean(mrr_scores), 4),
         "latency_ms": {k: round(statistics.mean(v), 3) for k, v in stage_latencies.items()},
     }
@@ -220,8 +229,9 @@ def run_benchmark(mode: str = "retrieval", use_real_embeddings: bool = True) -> 
                 return vecs
 
         ingestion = setup_synthetic_ehr_store(embed_fn=embed_fn)
+        adaptive_reranker = SemanticAdaptiveReranker(embed_fn=embed_fn)
         baseline_metrics = evaluate_retrieval_reranker(ingestion, baseline_time_aware_rerank)
-        custom_metrics = evaluate_retrieval_reranker(ingestion, custom_rerank)
+        custom_metrics = evaluate_retrieval_reranker(ingestion, adaptive_reranker)
         results["retrieval"] = {
             "baseline": baseline_metrics,
             "custom": custom_metrics,
@@ -247,8 +257,15 @@ def main() -> None:
         action="store_true",
         help="Use lightweight hash embeddings instead of downloading bge-small-en-v1.5.",
     )
+    parser.add_argument(
+        "--save-json",
+        type=str,
+        default="",
+        help="Optional path to save evaluation report JSON (e.g., data/eval_baseline.json).",
+    )
+    
     args = parser.parse_args()
-
+    
     report = run_benchmark(mode=args.mode, use_real_embeddings=not args.fast_embed)
 
     if "retrieval" in report:
@@ -258,6 +275,7 @@ def main() -> None:
             print(
                 f"[{variant.upper():8s}] Recall@1={m['recall@1']:.3f} | "
                 f"Recall@3={m['recall@3']:.3f} | Recall@5={m['recall@5']:.3f} | "
+                f"Prec@3={m['precision@3']:.3f} | Prec@5={m['precision@5']:.3f} | "
                 f"MRR={m['mrr']:.3f} | Latency(ms)={m['latency_ms']}"
             )
 
@@ -270,6 +288,12 @@ def main() -> None:
                 f"  {field:12s} -> Precision={scores['precision']:.3f} | "
                 f"Recall={scores['recall']:.3f} | F1={scores['f1']:.3f}"
             )
+
+    if args.save_json:
+        out_path = Path(args.save_json)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print(f"\nSaved benchmark report to {out_path}")
 
 
 if __name__ == "__main__":

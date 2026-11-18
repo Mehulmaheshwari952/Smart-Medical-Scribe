@@ -75,6 +75,20 @@ def get_services(request: Request) -> ServiceContainer:
 
 # --- Request / Response Payloads ---
 
+class InitialFactInput(BaseModel):
+    fact_type: str  # e.g., "allergy", "medication", "chronic_diagnosis"
+    name: str
+    value: str = ""
+    unit: str = ""
+
+
+class CreatePatientRequest(BaseModel):
+    name: str = Field(min_length=1)
+    dob: str = "1985-01-01"
+    sex: str = "U"
+    initial_facts: list[InitialFactInput] = Field(default_factory=list)
+    initial_note: Optional[str] = None
+
 class CreateConsultationRequest(BaseModel):
     patient_id: str
 
@@ -117,10 +131,42 @@ def _serialize_consultation(c: Consultation) -> ConsultationResponse:
 
 
 # --- Endpoints ---
-
+    
 @app.get("/", include_in_schema=False)
 def serve_dashboard():
     return FileResponse(STATIC_DIR / "index.html")
+
+@app.post("/patients", status_code=201)
+def create_patient(
+    payload: CreatePatientRequest,
+    db: Session = Depends(get_db),
+    services: ServiceContainer = Depends(get_services),
+):
+    patient = Patient(name=payload.name.strip(), dob=payload.dob, sex=payload.sex)
+    db.add(patient)
+    db.commit()
+    db.refresh(patient)
+
+    for fact in payload.initial_facts:
+        if fact.name.strip():
+            services.ingestion.ingest_structured_fact(
+                db,
+                patient.id,
+                fact.fact_type.strip().lower(),
+                fact.name.strip(),
+                fact.value.strip(),
+                fact.unit.strip(),
+            )
+
+    if payload.initial_note and payload.initial_note.strip():
+        services.ingestion.ingest_ehr_record(
+            db,
+            patient.id,
+            record_type="visit",
+            content=payload.initial_note.strip(),
+        )
+
+    return {"id": patient.id, "name": patient.name, "dob": patient.dob, "sex": patient.sex}
 
 
 @app.get("/patients")
@@ -130,6 +176,7 @@ def list_patients(db: Session = Depends(get_db)):
         {"id": p.id, "name": p.name, "dob": p.dob, "sex": p.sex}
         for p in patients
     ]
+
 
 @app.post("/similar-cases/ingest")
 def ingest_similar_cases(

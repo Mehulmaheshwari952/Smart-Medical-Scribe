@@ -146,6 +146,25 @@
       </div>
 
       <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500">Reference Cohort Cases</h2>
+          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 border border-teal-200">
+            De-identified
+          </span>
+        </div>
+        <div class="flex gap-1.5 mb-2.5">
+          <input id="similarQueryInput" type="text" placeholder="Search cohort cases..."
+            class="w-full text-xs border border-slate-200 rounded px-2 py-1 text-slate-700" />
+          <button id="searchSimilarBtn" class="bg-teal-600 hover:bg-teal-500 text-white text-xs font-medium px-2.5 py-1 rounded">
+            Go
+          </button>
+        </div>
+        <div id="similarCasesContainer" class="space-y-2.5 max-h-60 overflow-y-auto text-xs">
+          <p class="text-slate-400 italic">Finalize a consultation or search above to view similar cohort cases.</p>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
         <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Patient-Friendly Summary</h2>
         <textarea id="patientSummaryBox" rows="6" class="w-full text-xs border border-slate-200 rounded p-2 text-slate-700"
           placeholder="Plain-language summary appears after finalization..."></textarea>
@@ -221,6 +240,46 @@
       `).join("") || `<p class="text-slate-400 italic">No EHR records.</p>`;
     }
 
+    async function loadSimilarCases(query) {
+      const container = el("similarCasesContainer");
+      const trimmed = (query || "").trim();
+      if (!trimmed || trimmed.toLowerCase() === "unknown") {
+        container.innerHTML = `<p class="text-slate-400 italic">No clinical query available yet.</p>`;
+        return;
+      }
+      el("similarQueryInput").value = trimmed;
+      container.innerHTML = `<p class="text-slate-400 italic">Searching reference cohort...</p>`;
+
+      try {
+        const res = await fetch(`/similar-cases/search?query=${encodeURIComponent(trimmed)}&top_k=3`);
+        if (!res.ok) {
+          container.innerHTML = `<p class="text-rose-600">Failed to load reference cases.</p>`;
+          return;
+        }
+        const cases = await res.json();
+        if (!cases.length) {
+          container.innerHTML = `<p class="text-slate-400 italic">No matching reference cases found.</p>`;
+          return;
+        }
+        container.innerHTML = cases.map(item => `
+          <div class="p-2.5 rounded bg-teal-50/50 border border-teal-100 space-y-1">
+            <div class="flex items-center justify-between gap-1">
+              <span class="font-semibold text-slate-800">${item.diagnosis}</span>
+              <span class="font-mono text-[10px] bg-white border border-teal-200 text-teal-700 px-1.5 py-0.5 rounded">
+                ${(item.similarity_score * 100).toFixed(0)}% match
+              </span>
+            </div>
+            <p class="text-[10px] uppercase tracking-wide text-teal-700 font-medium">
+              ${item.specialty} &bull; ${item.source} (${item.case_id})
+            </p>
+            <p class="text-slate-600 leading-relaxed">${item.summary}</p>
+          </div>
+        `).join("");
+      } catch (err) {
+        container.innerHTML = `<p class="text-rose-600">Error querying reference cohort.</p>`;
+      }
+    }
+
     function renderConsultation(c) {
       currentConsultation = c;
       const badge = el("consultStatusBadge");
@@ -270,6 +329,9 @@
         : `<p class="text-slate-400 italic">No suggestions yet.</p>`;
 
       el("patientSummaryBox").value = c.patient_summary || "";
+      if (c.retrieval_query && c.retrieval_query !== "unknown") {
+        loadSimilarCases(c.retrieval_query);
+      }
     }
 
     async function uploadChunkBlob(blob, filename) {
@@ -400,6 +462,14 @@
       renderConsultation(c);
       await loadPatientHistory(c.patient_id);
       showToast("Consultation APPROVED & indexed into patient EHR!");
+    });
+
+    el("searchSimilarBtn").addEventListener("click", () => {
+      loadSimilarCases(el("similarQueryInput").value);
+    });
+    
+    el("similarQueryInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") loadSimilarCases(el("similarQueryInput").value);
     });
 
     loadPatients();

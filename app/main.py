@@ -16,6 +16,7 @@ from app.services.structuring import SOAPStructuringService, StructuringError
 from pathlib import Path
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from app.services.similar_cases import SimilarCaseInput, SimilarCaseResult, SimilarCasesService 
 
 STATIC_DIR = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
@@ -27,6 +28,7 @@ class ServiceContainer:
     ingestion: EHRIngestionService
     retrieval: HybridRetrievalService
     generation: ClinicalGenerationService
+    similar_cases: SimilarCasesService
 
 
 def create_default_services() -> ServiceContainer:
@@ -37,6 +39,7 @@ def create_default_services() -> ServiceContainer:
         ingestion=ingestion,
         retrieval=HybridRetrievalService(ingestion_service=ingestion),
         generation=ClinicalGenerationService(),
+        similar_cases=SimilarCasesService(chroma_client=ingestion.chroma_client),
     )
 
 
@@ -119,6 +122,25 @@ def list_patients(db: Session = Depends(get_db)):
         {"id": p.id, "name": p.name, "dob": p.dob, "sex": p.sex}
         for p in patients
     ]
+
+@app.post("/similar-cases/ingest")
+def ingest_similar_cases(
+    cases: list[SimilarCaseInput],
+    services: ServiceContainer = Depends(get_services),
+):
+    try:
+        count = services.similar_cases.ingest_cases(cases)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ingested": count, "collection": SimilarCasesService.COLLECTION_NAME}
+
+@app.get("/similar-cases/search", response_model=list[SimilarCaseResult])
+def search_similar_cases(
+    query: str = Query(..., min_length=2),
+    top_k: int = Query(default=3, ge=1, le=10),
+    services: ServiceContainer = Depends(get_services),
+):
+    return services.similar_cases.search_similar(query=query, top_k=top_k)
 
 @app.post("/consultations", response_model=ConsultationResponse, status_code=201)
 def create_consultation(

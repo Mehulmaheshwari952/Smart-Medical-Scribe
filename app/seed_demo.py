@@ -2,7 +2,32 @@ from datetime import datetime, timedelta, timezone
 from app.database import SessionLocal, init_db
 from app.models import Patient
 from app.services.ingestion import EHRIngestionService
+from app.services.similar_cases import SimilarCaseInput, SimilarCasesService
 
+similar_service = SimilarCasesService()
+similar_service.ingest_cases([
+        SimilarCaseInput(
+            case_id="mimic-demo-101",
+            source="mimic-iv-demo",
+            specialty="Endocrinology",
+            diagnosis="Uncontrolled Type 2 Diabetes Mellitus",
+            summary="De-identified case: 52yo with T2DM and HbA1c 8.9% on metformin monotherapy; addition of empagliflozin reduced HbA1c by 1.1% over 12 weeks with preserved eGFR.",
+        ),
+        SimilarCaseInput(
+            case_id="mimic-demo-102",
+            source="mimic-iv-demo",
+            specialty="Nephrology",
+            diagnosis="CKD Stage 3b with Osteoarthritis Pain",
+            summary="De-identified case: 65yo with CKD stage 3b (eGFR 34) presenting with knee pain; avoided systemic NSAIDs, managed safely with topical diclofenac and physical therapy.",
+        ),
+        SimilarCaseInput(
+            case_id="mimic-demo-103",
+            source="mimic-iv-demo",
+            specialty="Pulmonology",
+            diagnosis="Moderate Persistent Asthma",
+            summary="De-identified case: 31yo using SABA >4x/week; stepping up to daily low-dose ICS controller eliminated nocturnal awakenings within 4 weeks.",
+        ),
+    ])
 
 def seed() -> None:
     init_db()
